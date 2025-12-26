@@ -9,7 +9,7 @@ void error_callback(void *opaque, const char *msg)
 
 int check_file_syntax(const char *filename)
 {
-    TCCState *s = tcc_new();
+    TCCState *s = tcc_new(16 * 1024 * 1024);
     if (!s) {
         fprintf(stderr, "Could not create tcc state\n");
         return -1;
@@ -22,6 +22,7 @@ int check_file_syntax(const char *filename)
 
     int result = tcc_add_file(s, filename);
 
+    printf("Watermark %d\n", tcc_arena_watermark());
     tcc_delete(s);
 
     return result;
@@ -29,7 +30,7 @@ int check_file_syntax(const char *filename)
 
 int check_syntax(const char *content)
 {
-    TCCState *s = tcc_new();
+    TCCState *s = tcc_new(16 * 1024 * 1024);
     if (!s) {
         fprintf(stderr, "Could not create tcc state\n");
         return -1;
@@ -57,7 +58,7 @@ int main(int argc, char **argv)
 	    int result = check_file_syntax(argv[1]);
 
 	    if (result == 0) {
-		    printf("Syntax OK: %s\n", argv[1]);
+		    //printf("Syntax OK: %s\n", argv[1]);
 	    } else {
 		    printf("Syntax errors in: %s\n", argv[1]);
 	    }

@@ -194,19 +194,64 @@ PUB_FUNC char *tcc_fileextension (const char *name)
 #undef malloc
 #undef realloc
 
+static struct {
+    char *base;
+    size_t offset;
+    size_t size;
+} tcc_arena;
+
+PUB_FUNC void tcc_arena_init(unsigned int size_bytes)
+{
+    if (tcc_arena.base) {
+        if (size_bytes <= tcc_arena.size)
+            return;
+        free(tcc_arena.base);
+    }
+    tcc_arena.base = malloc(size_bytes);
+    if (!tcc_arena.base) {
+        fprintf(stderr, "fatal: could not allocate arena\n");
+        exit(1);
+    }
+    tcc_arena.offset = 0;
+    tcc_arena.size = size_bytes;
+}
+
+PUB_FUNC void tcc_arena_free(void)
+{
+    tcc_arena.offset = 0;
+}
+
+PUB_FUNC size_t tcc_arena_watermark(void)
+{
+    return tcc_arena.offset;
+}
+
 #ifndef MEM_DEBUG
 
 PUB_FUNC void tcc_free(void *ptr)
 {
-    free(ptr);
 }
 
 PUB_FUNC void *tcc_malloc(unsigned long size)
 {
     void *ptr;
-    ptr = malloc(size);
-    if (!ptr && size)
-        tcc_error("memory full (malloc)");
+    size_t aligned_size, total_size;
+    size_t *size_ptr;
+
+    total_size = sizeof(size_t) + size;
+    aligned_size = (total_size + 15) & ~15;
+
+    if (tcc_arena.offset + aligned_size > tcc_arena.size) {
+        fprintf(stderr, "fatal: arena exhausted (requested %lu bytes, %zu bytes available)\n",
+                size, tcc_arena.size - tcc_arena.offset);
+        exit(1);
+    }
+
+    size_ptr = (size_t *)(tcc_arena.base + tcc_arena.offset);
+    *size_ptr = size;
+    ptr = (void *)(size_ptr + 1);
+    tcc_arena.offset += aligned_size;
+
     return ptr;
 }
 
@@ -220,11 +265,26 @@ PUB_FUNC void *tcc_mallocz(unsigned long size)
 
 PUB_FUNC void *tcc_realloc(void *ptr, unsigned long size)
 {
-    void *ptr1;
-    ptr1 = realloc(ptr, size);
-    if (!ptr1 && size)
-        tcc_error("memory full (realloc)");
-    return ptr1;
+    void *new_ptr;
+    size_t old_size, copy_size;
+    size_t *size_ptr;
+
+    if (!ptr)
+        return tcc_malloc(size);
+
+    if (size == 0) {
+        tcc_free(ptr);
+        return NULL;
+    }
+
+    size_ptr = ((size_t *)ptr) - 1;
+    old_size = *size_ptr;
+
+    new_ptr = tcc_malloc(size);
+    copy_size = old_size < size ? old_size : size;
+    memcpy(new_ptr, ptr, copy_size);
+
+    return new_ptr;
 }
 
 PUB_FUNC char *tcc_strdup(const char *str)
@@ -721,11 +781,12 @@ static void tcc_cleanup(void)
     sym_free_first = NULL;
 }
 
-LIBTCCAPI TCCState *tcc_new(void)
+LIBTCCAPI TCCState *tcc_new(unsigned int arena_size_bytes)
 {
     TCCState *s;
 
     tcc_cleanup();
+    tcc_arena_init(arena_size_bytes);
 
     s = tcc_mallocz(sizeof(TCCState));
     if (!s)
@@ -927,8 +988,10 @@ LIBTCCAPI void tcc_delete(TCCState *s1)
 #endif
 
     tcc_free(s1);
-    if (0 == --nb_states)
+    if (0 == --nb_states) {
         tcc_memcheck();
+        tcc_arena_free();
+    }
 }
 
 LIBTCCAPI int tcc_set_output_type(TCCState *s, int output_type)

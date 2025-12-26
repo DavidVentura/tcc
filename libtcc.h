@@ -14,7 +14,7 @@ struct TCCState;
 typedef struct TCCState TCCState;
 
 /* create a new TCC compilation context */
-LIBTCCAPI TCCState *tcc_new(void);
+LIBTCCAPI TCCState *tcc_new(unsigned int arena_size);
 
 /* free a TCC compilation context */
 LIBTCCAPI void tcc_delete(TCCState *s);

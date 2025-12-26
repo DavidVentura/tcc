@@ -1094,6 +1094,10 @@ ST_FUNC char *pstrncpy(char *out, const char *in, size_t num);
 PUB_FUNC char *tcc_basename(const char *name);
 PUB_FUNC char *tcc_fileextension (const char *name);
 
+PUB_FUNC void tcc_arena_init(unsigned int arena_size);
+PUB_FUNC void tcc_arena_free(void);
+PUB_FUNC size_t tcc_arena_watermark(void);
+
 #ifndef MEM_DEBUG
 PUB_FUNC void tcc_free(void *ptr);
 PUB_FUNC void *tcc_malloc(unsigned long size);
