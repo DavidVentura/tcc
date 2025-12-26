@@ -189,24 +189,6 @@ static void print_search_dirs(TCCState *s)
 #endif
 }
 
-static void set_environment(TCCState *s)
-{
-    char * path;
-
-    path = getenv("C_INCLUDE_PATH");
-    if(path != NULL) {
-        tcc_add_sysinclude_path(s, path);
-    }
-    path = getenv("CPATH");
-    if(path != NULL) {
-        tcc_add_include_path(s, path);
-    }
-    path = getenv("LIBRARY_PATH");
-    if(path != NULL) {
-        tcc_add_library_path(s, path);
-    }
-}
-
 static char *default_outputfile(TCCState *s, const char *first_file)
 {
     char buf[1024];
@@ -276,7 +258,6 @@ redo:
             return 0;
         if (opt == OPT_PRINT_DIRS) {
             /* initialize search dirs */
-            set_environment(s);
             tcc_set_output_type(s, TCC_OUTPUT_MEMORY);
             print_search_dirs(s);
             return 0;
@@ -342,6 +323,8 @@ redo:
     if (s->run_test) {
         t = 0;
     } else if (s->output_type == TCC_OUTPUT_PREPROCESS) {
+        ;
+    } else if (s->syntax_only) {
         ;
     } else if (0 == ret) {
         if (s->output_type == TCC_OUTPUT_MEMORY) {

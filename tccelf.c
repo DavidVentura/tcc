@@ -2083,7 +2083,7 @@ static int elf_output_file(TCCState *s1, const char *filename)
             if (file_type == TCC_OUTPUT_EXE) {
                 char *ptr;
                 /* allow override the dynamic loader */
-                const char *elfint = getenv("LD_SO");
+                const char *elfint = NULL;
                 if (elfint == NULL)
                     elfint = DEFAULT_ELFINTERP(s1);
                 /* add interpreter section only if executable */

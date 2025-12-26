@@ -4057,13 +4057,12 @@ static int parse_btype(CType *type, AttributeDef *ad)
             }
             next();
             break;
-#ifdef TCC_TARGET_ARM64
+        case TOK_INT128:
         case TOK_UINT128:
-            /* GCC's __uint128_t appears in some Linux header files. Make it a
-               synonym for long double to get the size and alignment right. */
-            u = VT_LDOUBLE;
+            /* __int128 and __uint128_t appear in some Linux header files.
+               Use VT_QLONG (128-bit integer type) for parse-level tolerance. */
+            u = VT_QLONG;
             goto basic_type;
-#endif
         case TOK_BOOL:
             u = VT_BOOL;
             goto basic_type;
@@ -7053,7 +7052,9 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
    'cur_text_section' */
 static void gen_function(Sym *sym)
 {
+#ifndef TCC_SYNTAX_ONLY
     nocode_wanted = 0;
+#endif
     ind = cur_text_section->data_offset;
     /* NOTE: we patch the symbol size later */
     put_extern_sym(sym, cur_text_section, ind, 0);
@@ -7071,7 +7072,9 @@ static void gen_function(Sym *sym)
     local_scope = 0;
     rsym = 0;
     block(NULL, NULL, 0);
+#ifndef TCC_SYNTAX_ONLY
     nocode_wanted = 0;
+#endif
     gsym(rsym);
     gfunc_epilog();
     cur_text_section->data_offset = ind;

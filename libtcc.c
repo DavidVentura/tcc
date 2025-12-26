@@ -1032,8 +1032,7 @@ ST_FUNC int tcc_add_file_internal(TCCState *s1, const char *filename, int flags)
             if (s1->output_type == TCC_OUTPUT_MEMORY) {
                 ret = 0;
 #ifdef TCC_IS_NATIVE
-                if (NULL == dlopen(filename, RTLD_GLOBAL | RTLD_LAZY))
-                    ret = -1;
+		fprintf(stderr, "tried to dlopen %s\n", filename);
 #endif
             } else {
                 ret = tcc_load_dll(s1, fd, filename,
@@ -1570,6 +1569,7 @@ static const FlagDef options_f[] = {
     { offsetof(TCCState, leading_underscore), 0, "leading-underscore" },
     { offsetof(TCCState, ms_extensions), 0, "ms-extensions" },
     { offsetof(TCCState, dollars_in_identifiers), 0, "dollars-in-identifiers" },
+    { offsetof(TCCState, syntax_only), 0, "syntax-only" },
     { 0, 0, NULL }
 };
 

@@ -42,6 +42,7 @@
      DEF(TOK_FLOAT, "float")
      DEF(TOK_DOUBLE, "double")
      DEF(TOK_BOOL, "_Bool")
+     DEF(TOK_INT128, "__int128")
      DEF(TOK_SHORT, "short")
      DEF(TOK_STRUCT, "struct")
      DEF(TOK_UNION, "union")
@@ -61,9 +62,7 @@
      DEF(TOK_ASM2, "__asm")
      DEF(TOK_ASM3, "__asm__")
 
-#ifdef TCC_TARGET_ARM64
      DEF(TOK_UINT128, "__uint128_t")
-#endif
 
 /*********************************************************************/
 /* the following are not keywords. They are included to ease parsing */
