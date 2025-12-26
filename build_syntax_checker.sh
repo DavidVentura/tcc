@@ -2,9 +2,9 @@
 set -e
 
 CC="${CC:-musl-gcc}"
-CFLAGS="-DTCC_SYNTAX_ONLY -ggdb -O2 -DONE_SOURCE=1"
+CFLAGS="-DTCC_SYNTAX_ONLY -ggdb -O3 -DONE_SOURCE=1"
 LDFLAGS="-static"
 OUTPUT="syntax_check_file"
 LIBRARY="libtcc-syntax.a"
 
-$CC -flto $CFLAGS $LDFLAGS -o $OUTPUT syntax_check_file.c tcc-stubs.c libtcc.c tccpp.c tccgen.c -I. 
+$CC -flto $CFLAGS $LDFLAGS -o $OUTPUT syntax_check_file.c tcc-stubs.c libtcc.c tccpp.c tccgen.c -I.

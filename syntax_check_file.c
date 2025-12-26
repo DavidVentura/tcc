@@ -7,26 +7,32 @@ void error_callback(void *opaque, const char *msg)
     fprintf(stderr, "%s\n", msg);
 }
 
-int check_file_syntax(const char *filename)
+char *read_file(const char *filename)
 {
-    TCCState *s = tcc_new(16 * 1024 * 1024);
-    if (!s) {
-        fprintf(stderr, "Could not create tcc state\n");
-        return -1;
+    FILE *f = fopen(filename, "rb");
+    if (!f) {
+        fprintf(stderr, "Could not open file: %s\n", filename);
+        return NULL;
     }
 
-    tcc_set_lib_path(s, ".");
-    tcc_set_error_func(s, NULL, error_callback);
-    tcc_set_output_type(s, TCC_OUTPUT_MEMORY);
-    //tcc_set_output_type(s, TCC_OUTPUT_PREPROCESS);
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
 
-    int result = tcc_add_file(s, filename);
+    char *content = malloc(size + 1);
+    if (!content) {
+        fprintf(stderr, "Could not allocate memory for file\n");
+        fclose(f);
+        return NULL;
+    }
 
-    printf("Watermark %d\n", tcc_arena_watermark());
-    tcc_delete(s);
+    size_t read_size = fread(content, 1, size, f);
+    content[read_size] = '\0';
 
-    return result;
+    fclose(f);
+    return content;
 }
+
 
 int check_syntax(const char *content)
 {
@@ -54,8 +60,13 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    char* file_contents = read_file(argv[1]);
+    if (!file_contents) {
+        return 1;
+    }
+
     for(int i =0; i<100; i++) {
-	    int result = check_file_syntax(argv[1]);
+	    int result = check_syntax(file_contents);
 
 	    if (result == 0) {
 		    //printf("Syntax OK: %s\n", argv[1]);
@@ -63,4 +74,6 @@ int main(int argc, char **argv)
 		    printf("Syntax errors in: %s\n", argv[1]);
 	    }
     }
+
+    free(file_contents);
 }
