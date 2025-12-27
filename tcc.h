@@ -666,9 +666,6 @@ struct TCCState {
     int ms_bitfields; /* if true, emulate MS algorithm for aligning bitfields */
     int syntax_only; /* if true, only check syntax without code generation */
 
-    /* cached JSON export of type definitions */
-    char *cached_types_json;
-
     /* warning switches */
     int warn_write_strings;
     int warn_unsupported;

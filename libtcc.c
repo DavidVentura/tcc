@@ -683,7 +683,7 @@ ST_FUNC int tcc_open(TCCState *s1, const char *filename)
 static void json_write_struct(FILE *f, TCCState *s1, Sym *s, const char *name, int *first);
 
 /* compile the file opened in 'file'. Return non zero if errors. */
-static int tcc_compile(TCCState *s1)
+static int tcc_compile(TCCState *s1, char *types_buf, int types_bufsize)
 {
     Sym *define_start;
     int filetype, is_asm;
@@ -718,21 +718,21 @@ static int tcc_compile(TCCState *s1)
     free_defines(define_start);
 
     /* generate JSON export of type definitions before sym_pop */
-    FILE *f;
-    size_t size = 0;
-    f = open_memstream(&s1->cached_types_json, &size);
-    if (f) {
-        fputs("[\n", f);
-        int first = 1;
-        int i;
-        for (i = TOK_IDENT; i < tok_ident; i++) {
-            TokenSym *ts = table_ident[i - TOK_IDENT];
-            if (ts && ts->sym_struct) {
-                json_write_struct(f, s1, ts->sym_struct, ts->str, &first);
+    if (types_buf && types_bufsize > 0) {
+        FILE *f = fmemopen(types_buf, types_bufsize, "w");
+        if (f) {
+            fputs("[\n", f);
+            int first = 1;
+            int i;
+            for (i = TOK_IDENT; i < tok_ident; i++) {
+                TokenSym *ts = table_ident[i - TOK_IDENT];
+                if (ts && ts->sym_struct) {
+                    json_write_struct(f, s1, ts->sym_struct, ts->str, &first);
+                }
             }
+            fputs("\n]\n", f);
+            fclose(f);
         }
-        fputs("\n]\n", f);
-        fclose(f);
     }
 
     sym_pop(&global_stack, NULL, 0);
@@ -743,12 +743,17 @@ static int tcc_compile(TCCState *s1)
 
 LIBTCCAPI int tcc_compile_string(TCCState *s, const char *str)
 {
+    return tcc_compile_string_ex(s, str, NULL, 0);
+}
+
+LIBTCCAPI int tcc_compile_string_ex(TCCState *s, const char *str, char *types_buf, int types_bufsize)
+{
     int len, ret;
 
     len = strlen(str);
     tcc_open_bf(s, "<string>", len);
     memcpy(file->buffer, str, len);
-    ret = tcc_compile(s);
+    ret = tcc_compile(s, types_buf, types_bufsize);
     tcc_close();
     return ret;
 }
@@ -1144,7 +1149,7 @@ ST_FUNC int tcc_add_file_internal(TCCState *s1, const char *filename, int flags)
             break;
         }
     } else {
-        ret = tcc_compile(s1);
+        ret = tcc_compile(s1, NULL, 0);
     }
     tcc_close();
     return ret;
@@ -2301,15 +2306,6 @@ static void json_write_struct(FILE *f, TCCState *s1, Sym *s, const char *name, i
     fputs("}", f);
 }
 
-LIBTCCAPI char *tcc_get_types_json(TCCState *s1)
-{
-    if (!s1->cached_types_json)
-        return NULL;
-
-    // TODO: this leaks memory - caller cannot free (allocated by open_memstream)
-    // either copy with malloc() or document that caller should not free
-    return s1->cached_types_json;
-}
 
 PUB_FUNC void tcc_print_stats(TCCState *s, unsigned total_time)
 {

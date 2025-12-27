@@ -53,6 +53,11 @@ LIBTCCAPI int tcc_add_file(TCCState *s, const char *filename);
 /* compile a string containing a C source. Return -1 if error. */
 LIBTCCAPI int tcc_compile_string(TCCState *s, const char *buf);
 
+/* compile and optionally write type info to buffer.
+   If types_buf is not NULL and types_bufsize > 0, writes JSON array of struct/union definitions.
+   Return -1 if error. */
+LIBTCCAPI int tcc_compile_string_ex(TCCState *s, const char *buf, char *types_buf, int types_bufsize);
+
 /*****************************/
 /* linking commands */
 
@@ -92,10 +97,6 @@ LIBTCCAPI int tcc_relocate(TCCState *s1, void *ptr);
 
 /* return symbol value or NULL if not found */
 LIBTCCAPI void *tcc_get_symbol(TCCState *s, const char *name);
-
-/* get JSON representation of all parsed struct/union definitions
-   returns a malloc'd string that must be freed by the caller, or NULL on error */
-LIBTCCAPI char *tcc_get_types_json(TCCState *s);
 
 #ifdef __cplusplus
 }
