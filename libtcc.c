@@ -680,6 +680,8 @@ ST_FUNC int tcc_open(TCCState *s1, const char *filename)
     return fd;
 }
 
+static void json_write_struct(FILE *f, TCCState *s1, Sym *s, const char *name, int *first);
+
 /* compile the file opened in 'file'. Return non zero if errors. */
 static int tcc_compile(TCCState *s1)
 {
@@ -714,6 +716,25 @@ static int tcc_compile(TCCState *s1)
     free_inline_functions(s1);
     /* reset define stack, but keep -D and built-ins */
     free_defines(define_start);
+
+    /* generate JSON export of type definitions before sym_pop */
+    FILE *f;
+    size_t size = 0;
+    f = open_memstream(&s1->cached_types_json, &size);
+    if (f) {
+        fputs("[\n", f);
+        int first = 1;
+        int i;
+        for (i = TOK_IDENT; i < tok_ident; i++) {
+            TokenSym *ts = table_ident[i - TOK_IDENT];
+            if (ts && ts->sym_struct) {
+                json_write_struct(f, s1, ts->sym_struct, ts->str, &first);
+            }
+        }
+        fputs("\n]\n", f);
+        fclose(f);
+    }
+
     sym_pop(&global_stack, NULL, 0);
     sym_pop(&local_stack, NULL, 0);
     tccelf_end_file(s1);
@@ -2024,6 +2045,270 @@ LIBTCCAPI void tcc_set_options(TCCState *s, const char *r)
     args_parser_make_argv(r, &argc, &argv);
     tcc_parse_args(s, &argc, &argv, 0);
     dynarray_reset(&argv, &argc);
+}
+
+static void json_write_base_type_name(FILE *f, TCCState *s1, CType *type, int omit_struct_union_keyword, int omit_unsigned)
+{
+    int bt = type->t & VT_BTYPE;
+    int is_unsigned = type->t & VT_UNSIGNED;
+    int is_long = type->t & VT_LONG;
+
+    // Check if this is a typedef - if ref has a valid identifier name that's not a struct
+    if (type->ref && type->ref->v >= TOK_IDENT && !(type->ref->v & SYM_STRUCT) && bt != VT_STRUCT) {
+        const char *name = get_tok_str(type->ref->v, NULL);
+        // Only use it if it doesn't look like a generated label (starts with 'L.')
+        if (name && !(name[0] == 'L' && name[1] == '.')) {
+            fputs(name, f);
+            return;
+        }
+    }
+
+    if (bt == VT_STRUCT) {
+        if (!omit_struct_union_keyword) {
+            if (type->t & (1 << VT_STRUCT_SHIFT))
+                fputs("union ", f);
+            else
+                fputs("struct ", f);
+        }
+        if (type->ref && type->ref->v >= TOK_IDENT) {
+            const char *name = get_tok_str(type->ref->v & ~SYM_STRUCT, NULL);
+            // Check if this is a generated label (anonymous type)
+            if (name && name[0] == 'L' && name[1] == '.') {
+                fputs("<anonymous>", f);
+            } else {
+                fputs(name, f);
+            }
+        } else {
+            fputs("<anonymous>", f);
+        }
+        return;
+    }
+
+    if (bt == VT_FUNC) {
+        fputs("function", f);
+        return;
+    }
+
+    if (!omit_unsigned && is_unsigned && bt != VT_BYTE)
+        fputs("unsigned ", f);
+
+    switch (bt) {
+        case VT_VOID: fputs("void", f); break;
+        case VT_BYTE:
+            if (!omit_unsigned)
+                fputs(is_unsigned ? "unsigned char" : "char", f);
+            else
+                fputs("char", f);
+            break;
+        case VT_SHORT: fputs("short", f); break;
+        case VT_INT: fputs(is_long ? "long" : "int", f); break;
+        case VT_LLONG: fputs("long long", f); break;
+        case VT_FLOAT: fputs("float", f); break;
+        case VT_DOUBLE: fputs(is_long ? "long double" : "double", f); break;
+        case VT_BOOL: fputs("_Bool", f); break;
+        default: fputs("unknown", f); break;
+    }
+}
+
+static void json_write_struct_members(FILE *f, TCCState *s1, Sym *s, int indent)
+{
+    Sym *m = s->next;
+    int first = 1;
+
+    while (m) {
+        if (!(m->v & SYM_FIELD)) {
+            m = m->next;
+            continue;
+        }
+
+        if (!first)
+            fputs(",\n", f);
+        first = 0;
+
+        for (int i = 0; i < indent; i++) fputs("  ", f);
+        fputs("{", f);
+
+        fputs("\"name\": \"", f);
+        if (m->v >= TOK_IDENT) {
+            const char *name = get_tok_str(m->v & ~SYM_FIELD, NULL);
+            fputs(name, f);
+        } else {
+            fputs("<anonymous>", f);
+        }
+        fputc('"', f);
+
+        CType type_copy = m->type;
+        int is_array = type_copy.t & VT_ARRAY;
+        int array_size = -1;
+        int is_pointer = 0;
+
+        // Handle arrays first (arrays have VT_PTR in BTYPE too)
+        if (is_array) {
+            if (type_copy.ref && type_copy.ref->c >= 0)
+                array_size = type_copy.ref->c;
+            type_copy.t &= ~VT_ARRAY;
+            // Get element type from ref
+            if (type_copy.ref && type_copy.ref->type.t) {
+                type_copy = type_copy.ref->type;
+            }
+        }
+
+        // Now check for pointers (only if not already handled as array)
+        int bt = type_copy.t & VT_BTYPE;
+        if (!is_array && bt == VT_PTR) {
+            is_pointer = 1;
+            if (type_copy.ref) {
+                type_copy = type_copy.ref->type;
+            } else {
+                type_copy.t = VT_VOID;
+            }
+        }
+
+        int final_bt = type_copy.t & VT_BTYPE;
+        int is_struct_or_union = (final_bt == VT_STRUCT);
+        int is_scalar = !is_pointer && !is_array && !is_struct_or_union;
+
+        // Check if this is an anonymous struct/union
+        int is_anonymous = 0;
+        if (is_struct_or_union && type_copy.ref) {
+            const char *struct_name = NULL;
+            if (type_copy.ref->v >= TOK_IDENT) {
+                struct_name = get_tok_str(type_copy.ref->v & ~SYM_STRUCT, NULL);
+            }
+            if (!struct_name || (struct_name[0] == 'L' && struct_name[1] == '.')) {
+                is_anonymous = 1;
+            }
+        }
+
+        // Only output type field for non-anonymous types
+        if (!is_anonymous) {
+            fputs(", \"type\": \"", f);
+            json_write_base_type_name(f, s1, &type_copy, 1, is_scalar);
+            fputs("\"", f);
+        }
+
+        fputs(", \"kind\": \"", f);
+        if (is_pointer) {
+            fputs("pointer", f);
+        } else if (is_array) {
+            fputs("array", f);
+        } else if (is_struct_or_union) {
+            if (is_anonymous) {
+                // Anonymous struct/union gets special kind
+                if (type_copy.t & (1 << VT_STRUCT_SHIFT))
+                    fputs("anon_union", f);
+                else
+                    fputs("anon_struct", f);
+            } else {
+                // Named struct/union
+                if (type_copy.t & (1 << VT_STRUCT_SHIFT))
+                    fputs("union", f);
+                else
+                    fputs("struct", f);
+            }
+        } else {
+            fputs("scalar", f);
+        }
+        fputs("\"", f);
+
+        if (is_scalar && (type_copy.t & VT_UNSIGNED)) {
+            fputs(", \"unsigned\": true", f);
+        }
+
+        if (is_array && array_size >= 0) {
+            fputs(", \"element_count\": ", f);
+            fprintf(f, "%d", array_size);
+        }
+
+        fputs(", \"offset\": ", f);
+        fprintf(f, "%d", m->c);
+
+        int align = 0;
+        int size = type_size(&m->type, &align);
+        fputs(", \"size\": ", f);
+        fprintf(f, "%d", size);
+
+        if (m->type.t & VT_BITFIELD) {
+            int bit_pos = BIT_POS(m->type.t);
+            int bit_size = BIT_SIZE(m->type.t);
+            fputs(", \"bitfield\": {\"pos\": ", f);
+            fprintf(f, "%d", bit_pos);
+            fputs(", \"size\": ", f);
+            fprintf(f, "%d", bit_size);
+            fputs("}", f);
+        }
+
+        // For anonymous structs/unions, inline their members
+        if (is_anonymous) {
+            fputs(", \"members\": [\n", f);
+            json_write_struct_members(f, s1, type_copy.ref, indent + 1);
+            fputs("\n", f);
+            for (int i = 0; i < indent; i++) fputs("  ", f);
+            fputs("]", f);
+        }
+
+        fputs("}", f);
+
+        m = m->next;
+    }
+}
+
+static void json_write_struct(FILE *f, TCCState *s1, Sym *s, const char *name, int *first)
+{
+    if (!s || (s->type.t & VT_BTYPE) != VT_STRUCT)
+        return;
+
+    if (!*first)
+        fputs(",\n", f);
+    *first = 0;
+
+    fputs("  {", f);
+
+    fputs("\"name\": \"", f);
+    if (name) {
+        fputs(name, f);
+    } else {
+        fputs("<anonymous>", f);
+    }
+    fputc('"', f);
+
+    fputs(", \"kind\": \"", f);
+    // VT_UNION is (1 << VT_STRUCT_SHIFT | VT_STRUCT), check bit 20
+    if (s->type.t & (1 << VT_STRUCT_SHIFT))
+        fputs("union", f);
+    else
+        fputs("struct", f);
+    fputs("\"", f);
+
+    int align = 0;
+    int size = 0;
+    if (s->type.ref && s->type.ref->r != 0) {
+        size = type_size(&s->type, &align);
+    } else {
+        size = s->c;
+        align = s->r;
+    }
+    fputs(", \"size\": ", f);
+    fprintf(f, "%d", size);
+
+    fputs(", \"align\": ", f);
+    fprintf(f, "%d", align);
+
+    fputs(", \"members\": [\n", f);
+    json_write_struct_members(f, s1, s, 2);
+    fputs("\n  ]", f);
+
+    fputs("}", f);
+}
+
+LIBTCCAPI char *tcc_get_types_json(TCCState *s1)
+{
+    if (!s1->cached_types_json)
+        return NULL;
+
+    // TODO: this leaks memory - caller cannot free (allocated by open_memstream)
+    // either copy with malloc() or document that caller should not free
+    return s1->cached_types_json;
 }
 
 PUB_FUNC void tcc_print_stats(TCCState *s, unsigned total_time)

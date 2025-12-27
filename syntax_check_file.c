@@ -47,7 +47,12 @@ int check_syntax(const char *content)
     tcc_set_output_type(s, TCC_OUTPUT_MEMORY);
 
     int result = tcc_compile_string(s, content);
+    const char* json = tcc_get_types_json(s);
+    if (json) {
+        printf("%s", json);
+    }
 
+    // TODO
     tcc_delete(s);
 
     return result;
@@ -65,11 +70,11 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    for(int i =0; i<100; i++) {
+    for(int i = 0; i<1; i++) {
 	    int result = check_syntax(file_contents);
 
 	    if (result == 0) {
-		    //printf("Syntax OK: %s\n", argv[1]);
+		    printf("Syntax OK: %s\n", argv[1]);
 	    } else {
 		    printf("Syntax errors in: %s\n", argv[1]);
 	    }

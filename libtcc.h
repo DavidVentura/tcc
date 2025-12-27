@@ -93,6 +93,10 @@ LIBTCCAPI int tcc_relocate(TCCState *s1, void *ptr);
 /* return symbol value or NULL if not found */
 LIBTCCAPI void *tcc_get_symbol(TCCState *s, const char *name);
 
+/* get JSON representation of all parsed struct/union definitions
+   returns a malloc'd string that must be freed by the caller, or NULL on error */
+LIBTCCAPI char *tcc_get_types_json(TCCState *s);
+
 #ifdef __cplusplus
 }
 #endif

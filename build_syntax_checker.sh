@@ -7,4 +7,4 @@ LDFLAGS="-static"
 OUTPUT="syntax_check_file"
 LIBRARY="libtcc-syntax.a"
 
-$CC -flto $CFLAGS $LDFLAGS -o $OUTPUT syntax_check_file.c tcc-stubs.c libtcc.c tccpp.c tccgen.c -I.
+$CC $CFLAGS $LDFLAGS -o $OUTPUT syntax_check_file.c tcc-stubs.c libtcc.c tccpp.c tccgen.c -I.
