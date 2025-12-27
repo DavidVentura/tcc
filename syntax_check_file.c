@@ -46,15 +46,19 @@ int check_syntax(const char *content)
     tcc_set_error_func(s, NULL, error_callback);
     tcc_set_output_type(s, TCC_OUTPUT_MEMORY);
 
-    char *json = malloc(4 * 1024 * 1024);  /* 16MB buffer for JSON */
+    char *json = malloc(1 * 1024 * 1024);  /* 1MB buffer for JSON */
     if (!json) {
         fprintf(stderr, "Could not allocate JSON buffer\n");
         tcc_delete(s);
         return -1;
     }
 
-    int result = tcc_compile_string_ex(s, content, json, 16 * 1024 * 1024);
+    TCCBufWriter w = { json, 0, 1 * 1024 * 1024, 0 };
+    int result = tcc_compile_string_ex(s, content, &w);
     if (result == 0) {
+        if (w.full) {
+            fprintf(stderr, "Warning: JSON buffer full, output may be truncated\n");
+        }
         printf("%s", json);
     }
 

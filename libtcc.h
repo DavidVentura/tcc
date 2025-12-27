@@ -50,13 +50,22 @@ LIBTCCAPI void tcc_undefine_symbol(TCCState *s, const char *sym);
 /* add a file (C file, dll, object, library, ld script). Return -1 if error. */
 LIBTCCAPI int tcc_add_file(TCCState *s, const char *filename);
 
+/* Buffer writer for type export */
+typedef struct TCCBufWriter {
+    char *buf;      /* output buffer */
+    int pos;        /* current position in buffer */
+    int size;       /* total buffer size */
+    int full;       /* set to 1 if buffer became full during writing */
+} TCCBufWriter;
+
 /* compile a string containing a C source. Return -1 if error. */
 LIBTCCAPI int tcc_compile_string(TCCState *s, const char *buf);
 
 /* compile and optionally write type info to buffer.
-   If types_buf is not NULL and types_bufsize > 0, writes JSON array of struct/union definitions.
+   If w is not NULL, writes JSON array of struct/union definitions.
+   Check w->full after to see if buffer was too small.
    Return -1 if error. */
-LIBTCCAPI int tcc_compile_string_ex(TCCState *s, const char *buf, char *types_buf, int types_bufsize);
+LIBTCCAPI int tcc_compile_string_ex(TCCState *s, const char *buf, TCCBufWriter *w);
 
 /*****************************/
 /* linking commands */
