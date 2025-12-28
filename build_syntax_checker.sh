@@ -3,7 +3,7 @@ set -e
 
 CC="${CC:-musl-gcc}"
 # on O0 missing dead code elimination triggers linker errors
-CFLAGS="-DTCC_SYNTAX_ONLY -ggdb -O1 -DONE_SOURCE=1"
+CFLAGS="-DTCC_SYNTAX_ONLY -ggdb -O2 -DONE_SOURCE=1"
 LDFLAGS="-static"
 OUTPUT="syntax_check_file"
 LIBRARY="libtcc-syntax.a"

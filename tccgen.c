@@ -545,6 +545,106 @@ ST_INLN Sym *sym_find(int v)
     return table_ident[v]->sym_identifier;
 }
 
+/* Helper to get real struct name - returns NULL for anonymous/generated names */
+static const char* get_real_struct_name(Sym *struct_sym)
+{
+    if (!struct_sym || struct_sym->v < TOK_IDENT)
+        return NULL;
+
+    /* Use get_tok_str() and filter generated labels (L.*) */
+    const char *name = get_tok_str(struct_sym->v & ~SYM_STRUCT, NULL);
+    if (name && !(name[0] == 'L' && name[1] == '.')) {
+        return name;
+    }
+    return NULL;
+}
+
+/* Helper function to print type information for pattern matching */
+static void print_arg_type_info(CType *type, int arg_num)
+{
+    int bt = type->t & VT_BTYPE;
+    const char *type_name = NULL;
+
+    if (arg_num >= 0)
+        printf("  arg[%d]: ", arg_num);
+
+    if (bt == VT_PTR) {
+        printf("pointer to ");
+        if (type->ref) {
+            CType *ref_type = &type->ref->type;
+            int ref_bt = ref_type->t & VT_BTYPE;
+
+            if (ref_bt == VT_STRUCT && type->ref) {
+                /* For pointers to structs, type->ref is a wrapper - get the actual struct def */
+                const char *struct_name = get_real_struct_name(ref_type->ref);
+                if (struct_name) {
+                    if (ref_type->t & (1 << VT_STRUCT_SHIFT))
+                        printf("union %s", struct_name);
+                    else
+                        printf("struct %s", struct_name);
+                } else {
+                    if (ref_type->t & (1 << VT_STRUCT_SHIFT))
+                        printf("<anonymous union>");
+                    else
+                        printf("<anonymous struct>");
+                }
+            } else if (ref_bt == VT_VOID) {
+                printf("void");
+            } else {
+                switch (ref_bt) {
+                    case VT_BYTE: printf(ref_type->t & VT_UNSIGNED ? "unsigned char" : "char"); break;
+                    case VT_SHORT: printf(ref_type->t & VT_UNSIGNED ? "unsigned short" : "short"); break;
+                    case VT_INT: printf(ref_type->t & VT_UNSIGNED ? "unsigned int" : "int"); break;
+                    case VT_LLONG: printf(ref_type->t & VT_UNSIGNED ? "unsigned long long" : "long long"); break;
+                    default: printf("unknown"); break;
+                }
+            }
+        } else {
+            printf("void");
+        }
+        if (arg_num >= 0) printf("\n");
+        return;
+    }
+
+    if (bt == VT_STRUCT) {
+        if (type->ref) {
+            const char *struct_name = get_real_struct_name(type->ref);
+            if (struct_name) {
+                if (type->t & (1 << VT_STRUCT_SHIFT))
+                    printf("union %s", struct_name);
+                else
+                    printf("struct %s", struct_name);
+            } else {
+                if (type->t & (1 << VT_STRUCT_SHIFT))
+                    printf("<anonymous union>");
+                else
+                    printf("<anonymous struct>");
+            }
+        } else {
+            printf("<anonymous struct/union>");
+        }
+        if (arg_num >= 0) printf("\n");
+        return;
+    }
+
+    switch (bt) {
+        case VT_VOID: type_name = "void"; break;
+        case VT_BYTE: type_name = type->t & VT_UNSIGNED ? "unsigned char" : "char"; break;
+        case VT_SHORT: type_name = type->t & VT_UNSIGNED ? "unsigned short" : "short"; break;
+        case VT_INT: type_name = type->t & VT_UNSIGNED ? "unsigned int" : "int"; break;
+        case VT_LLONG: type_name = type->t & VT_UNSIGNED ? "unsigned long long" : "long long"; break;
+        case VT_FLOAT: type_name = "float"; break;
+        case VT_DOUBLE: type_name = "double"; break;
+        case VT_LDOUBLE: type_name = "long double"; break;
+        default: type_name = "unknown"; break;
+    }
+
+    if (type_name) {
+        printf("%s", type_name);
+        if (arg_num >= 0) printf("\n");
+    }
+}
+
 /* push a given symbol on the symbol stack */
 ST_FUNC Sym *sym_push(int v, CType *type, int r, int c)
 {
@@ -5172,6 +5272,20 @@ ST_FUNC void unary(void)
             } else {
                 vtop->r &= ~VT_LVAL; /* no lvalue */
             }
+
+            /* Save function name for pattern matching (before extracting type) */
+            const char *func_name_for_match = NULL;
+            if (vtop->r & VT_SYM) {
+                Sym *func_sym = vtop->sym;
+                if (func_sym && func_sym->v >= TOK_IDENT) {
+                    func_name_for_match = get_tok_str(func_sym->v, NULL);
+		    // TODO whitelist
+		    if (strcmp(func_name_for_match, "bpf_perf_event_output") != 0) {
+                        func_name_for_match = NULL;
+		    }
+                }
+            }
+
             /* get return type */
             s = vtop->type.ref;
             next();
@@ -5230,11 +5344,21 @@ ST_FUNC void unary(void)
                 }
                 ret.c.i = 0;
             }
+
+            /* Storage for pattern matching: save argument types */
+            CType arg_types[8];
+            int saved_nb_args = 0;
+
             if (tok != ')') {
                 for(;;) {
                     expr_eq();
+                    /* Save argument type for pattern matching */
+                    if (func_name_for_match && saved_nb_args < 8) {
+                        arg_types[saved_nb_args] = vtop->type;
+                    }
                     gfunc_param_typed(s, sa);
                     nb_args++;
+                    saved_nb_args++;
                     if (sa)
                         sa = sa->next;
                     if (tok == ')')
@@ -5245,6 +5369,21 @@ ST_FUNC void unary(void)
             if (sa)
                 tcc_error("too few arguments to function");
             skip(')');
+
+            /* Pattern matching: check if this is a function we're interested in */
+            if (func_name_for_match) {
+                /* Example: match calls to bpf_perf_event_output */
+                printf("=== Found call to %s() at %s:%d ===\n",
+                       func_name_for_match, file->filename, file->line_num);
+                printf("Number of arguments: %d\n", saved_nb_args);
+
+                /* Print type information for each argument */
+                for (int i = 0; i < saved_nb_args && i < 64; i++) {
+                    print_arg_type_info(&arg_types[i], i);
+                }
+                printf("\n");
+            }
+
             gfunc_call(nb_args);
 
             /* return value */
