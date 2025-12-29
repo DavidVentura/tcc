@@ -687,6 +687,7 @@ static void buf_puts(BufWriter *w, const char *s);
 static void buf_putc(BufWriter *w, char c);
 static void buf_printf(BufWriter *w, const char *fmt, ...);
 static void json_write_struct(BufWriter *w, TCCState *s1, Sym *s, const char *name, int *first);
+static void json_write_debug_calls(BufWriter *w, TCCState *s1);
 
 /* compile the file opened in 'file'. Return non zero if errors. */
 static int tcc_compile(TCCState *s1, BufWriter *w)
@@ -769,6 +770,24 @@ LIBTCCAPI int tcc_compile_string_ex(TCCState *s, const char *str, BufWriter *w)
     return ret;
 }
 
+LIBTCCAPI int tcc_get_debug_calls(TCCState *s, TCCBufWriter *w)
+{
+    if (!s || !w) return -1;
+
+    w->pos = 0;
+    w->full = 0;
+
+    if (w->buf && w->size > 0) {
+        json_write_debug_calls((BufWriter *)w, s);
+
+        if (!w->full && w->pos < w->size) {
+            w->buf[w->pos] = '\0';
+        }
+    }
+
+    return w->full ? -1 : 0;
+}
+
 /* define a preprocessor symbol. A value can also be provided with the '=' operator */
 LIBTCCAPI void tcc_define_symbol(TCCState *s1, const char *sym, const char *value)
 {
@@ -835,6 +854,10 @@ LIBTCCAPI TCCState *tcc_new(unsigned int arena_size_bytes)
     s->nocommon = 1;
     s->warn_implicit_function_declaration = 1;
     s->ms_extensions = 1;
+
+    s->debug_calls = NULL;
+    s->nb_debug_calls = 0;
+    s->debug_calls_capacity = 0;
 
 #ifdef CHAR_IS_UNSIGNED
     s->char_is_unsigned = 1;
@@ -1023,6 +1046,23 @@ LIBTCCAPI void tcc_delete(TCCState *s1)
     /* free runtime memory */
     tcc_run_free(s1);
 #endif
+
+    /* Free debug call records */
+    if (s1->debug_calls) {
+        for (int i = 0; i < s1->nb_debug_calls; i++) {
+            DebugCallRecord *rec = &s1->debug_calls[i];
+
+            switch (rec->func_type) {
+                case DEBUG_FUNC_STRUCT:
+                    if (rec->args.debug_struct.label)
+                        tcc_free((void *)rec->args.debug_struct.label);
+                    if (rec->args.debug_struct.struct_name)
+                        tcc_free((void *)rec->args.debug_struct.struct_name);
+                    break;
+            }
+        }
+        tcc_free(s1->debug_calls);
+    }
 
     tcc_free(s1);
     if (0 == --nb_states) {
@@ -2362,6 +2402,49 @@ static void json_write_struct(BufWriter *w, TCCState *s1, Sym *s, const char *na
     buf_puts(w, "\n  ]");
 
     buf_puts(w, "}");
+}
+
+static void json_write_debug_calls(BufWriter *w, TCCState *s1)
+{
+    if (w->full) return;
+    if (!s1->debug_calls || s1->nb_debug_calls == 0) {
+        buf_puts(w, "[]");
+        return;
+    }
+
+    buf_puts(w, "[\n");
+
+    for (int i = 0; i < s1->nb_debug_calls; i++) {
+        if (w->full) break;
+
+        DebugCallRecord *rec = &s1->debug_calls[i];
+
+        if (i > 0) buf_puts(w, ",\n");
+        buf_puts(w, "  {\n");
+
+        switch (rec->func_type) {
+            case DEBUG_FUNC_STRUCT:
+                buf_puts(w, "    \"type_constant\": ");
+                buf_printf(w, "%d,\n", DEBUG_FUNC_STRUCT);
+                buf_puts(w, "    \"label\": \"");
+                buf_puts(w, rec->args.debug_struct.label ? rec->args.debug_struct.label : "");
+                buf_puts(w, "\",\n");
+                buf_printf(w, "    \"counter\": %d,\n", rec->args.debug_struct.counter);
+                buf_puts(w, "    \"type_name\": \"");
+                buf_puts(w, rec->args.debug_struct.struct_name ? rec->args.debug_struct.struct_name : "");
+                buf_puts(w, "\",\n");
+                buf_printf(w, "    \"is_union\": %s\n",
+                          rec->args.debug_struct.is_union ? "true" : "false");
+                break;
+            default:
+                buf_printf(w, "    \"type_constant\": %d\n", rec->func_type);
+                break;
+        }
+
+        buf_puts(w, "  }");
+    }
+
+    buf_puts(w, "\n]");
 }
 
 

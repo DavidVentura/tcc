@@ -46,7 +46,7 @@ int check_syntax(const char *content)
     tcc_set_error_func(s, NULL, error_callback);
     tcc_set_output_type(s, TCC_OUTPUT_MEMORY);
 
-    char *json = malloc(2 * 1024 * 1024);  /* 1MB buffer for JSON */
+    char *json = malloc(2 * 1024 * 1024);  /* 2MB buffer for JSON */
     if (!json) {
         fprintf(stderr, "Could not allocate JSON buffer\n");
         tcc_delete(s);
@@ -59,7 +59,18 @@ int check_syntax(const char *content)
         if (w.full) {
             fprintf(stderr, "Warning: JSON buffer full, output may be truncated\n");
         }
-        //printf("%s", json);
+        //printf("Type Info:\n%s\n\n", json);
+    }
+
+    /* Get debug calls */
+    char *debug_json = malloc(2 * 1024 * 1024);  /* 2MB buffer for debug calls JSON */
+    if (debug_json) {
+        TCCBufWriter debug_w = { debug_json, 0, 2 * 1024 * 1024, 0 };
+        int debug_result = tcc_get_debug_calls(s, &debug_w);
+        if (debug_result == 0 && !debug_w.full) {
+            printf("Debug Calls:\n%s\n", debug_json);
+        }
+        free(debug_json);
     }
 
     free(json);

@@ -98,6 +98,82 @@ static int gvtst(int inv, int t);
 static void gen_inline_functions(TCCState *s);
 static void skip_or_save_block(TokenString **str);
 static void gv_dup(void);
+static const char* get_real_struct_name(Sym *struct_sym);
+
+/* Debug function tracking table */
+typedef struct DebugFuncHandler {
+    const char *func_name;
+    int func_type;
+    int expected_args;
+    void (*handler)(TCCState *s1, CType *arg_types, SValue *arg_values, int nb_args);
+} DebugFuncHandler;
+
+static void handle_debug_struct_call(TCCState *s1, CType *arg_types, SValue *arg_values, int nb_args);
+
+static const DebugFuncHandler debug_func_table[] = {
+    { "__debug_struct", DEBUG_FUNC_STRUCT, 3, handle_debug_struct_call },
+    { NULL, 0, 0, NULL }  /* Sentinel */
+};
+
+static void handle_debug_struct_call(TCCState *s1, CType *arg_types, SValue *arg_values, int nb_args)
+{
+    if (nb_args != 3) {
+        tcc_warning("__debug_struct expects 3 arguments, got %d", nb_args);
+        return;
+    }
+
+    /* Expand array if needed */
+    if (s1->nb_debug_calls >= s1->debug_calls_capacity) {
+        int new_cap = s1->debug_calls_capacity == 0 ? 16 : s1->debug_calls_capacity * 2;
+        DebugCallRecord *new_array = tcc_realloc(s1->debug_calls,
+                                                  new_cap * sizeof(DebugCallRecord));
+        if (!new_array) {
+            tcc_error("out of memory tracking debug calls");
+            return;
+        }
+        s1->debug_calls = new_array;
+        s1->debug_calls_capacity = new_cap;
+    }
+
+    DebugCallRecord *rec = &s1->debug_calls[s1->nb_debug_calls];
+    memset(rec, 0, sizeof(DebugCallRecord));
+
+    rec->func_type = DEBUG_FUNC_STRUCT;
+
+    /* Extract arg 0: label string */
+    SValue *arg0 = &arg_values[0];
+    if ((arg0->r & VT_VALMASK) == VT_CONST && arg0->c.str.data) {
+        /* String data has been deep-copied for us, just duplicate it */
+        rec->args.debug_struct.label = tcc_strdup((const char *)arg0->c.str.data);
+    } else {
+        rec->args.debug_struct.label = tcc_strdup("<non-constant>");
+    }
+
+    /* Extract arg 1: counter (integer constant) */
+    SValue *arg1 = &arg_values[1];
+    if ((arg1->r & VT_VALMASK) == VT_CONST) {
+        rec->args.debug_struct.counter = (int)arg1->c.i;
+    } else {
+        rec->args.debug_struct.counter = -1;
+    }
+
+    /* Extract arg 2: struct name from pointer type */
+    CType *arg2_type = &arg_types[2];
+    if ((arg2_type->t & VT_BTYPE) == VT_PTR && arg2_type->ref) {
+        CType *pointed = &arg2_type->ref->type;
+        if ((pointed->t & VT_BTYPE) == VT_STRUCT && pointed->ref) {
+            const char *name = get_real_struct_name(pointed->ref);
+            rec->args.debug_struct.struct_name = tcc_strdup(name ? name : "<anonymous>");
+            rec->args.debug_struct.is_union = (pointed->t & (1 << VT_STRUCT_SHIFT)) ? 1 : 0;
+        } else {
+            rec->args.debug_struct.struct_name = tcc_strdup("<not-a-struct-ptr>");
+        }
+    } else {
+        rec->args.debug_struct.struct_name = tcc_strdup("<not-a-pointer>");
+    }
+
+    s1->nb_debug_calls++;
+}
 
 ST_INLN int is_float(int t)
 {
@@ -5273,16 +5349,18 @@ ST_FUNC void unary(void)
                 vtop->r &= ~VT_LVAL; /* no lvalue */
             }
 
-            /* Save function name for pattern matching (before extracting type) */
-            const char *func_name_for_match = NULL;
+            /* Check if this is a tracked debug function */
+            const DebugFuncHandler *debug_handler = NULL;
             if (vtop->r & VT_SYM) {
                 Sym *func_sym = vtop->sym;
                 if (func_sym && func_sym->v >= TOK_IDENT) {
-                    func_name_for_match = get_tok_str(func_sym->v, NULL);
-		    // TODO whitelist
-		    if (strcmp(func_name_for_match, "bpf_perf_event_output") != 0) {
-                        func_name_for_match = NULL;
-		    }
+                    const char *func_name = get_tok_str(func_sym->v, NULL);
+                    for (const DebugFuncHandler *h = debug_func_table; h->func_name; h++) {
+                        if (strcmp(func_name, h->func_name) == 0) {
+                            debug_handler = h;
+                            break;
+                        }
+                    }
                 }
             }
 
@@ -5345,16 +5423,44 @@ ST_FUNC void unary(void)
                 ret.c.i = 0;
             }
 
-            /* Storage for pattern matching: save argument types */
+            /* Storage for debug function tracking: save argument types and values */
             CType arg_types[8];
+            SValue arg_values[8];
+            char *saved_strings[8] = {0};  /* Deep copies of string literals */
             int saved_nb_args = 0;
 
             if (tok != ')') {
                 for(;;) {
+                    /* Save string literal before expr_eq() processes it */
+                    CString saved_tokc_str = {0, NULL, 0};
+                    int was_string_tok = (tok == TOK_STR);
+                    if (was_string_tok && debug_handler) {
+                        /* Make a copy of the string data from tokc */
+                        if (tokc.str.size > 0 && tokc.str.data) {
+                            saved_tokc_str.size = tokc.str.size;
+                            saved_tokc_str.data = tcc_malloc(tokc.str.size + 1);
+                            if (saved_tokc_str.data) {
+                                memcpy(saved_tokc_str.data, tokc.str.data, tokc.str.size);
+                                ((char *)saved_tokc_str.data)[tokc.str.size] = '\0';
+                            }
+                        }
+                    }
+
                     expr_eq();
-                    /* Save argument type for pattern matching */
-                    if (func_name_for_match && saved_nb_args < 8) {
+                    /* Save argument type and value for debug function tracking */
+                    if (debug_handler && saved_nb_args < 8) {
                         arg_types[saved_nb_args] = vtop->type;
+                        arg_values[saved_nb_args] = *vtop;
+
+                        /* Use the saved string literal if we had one */
+                        if (was_string_tok && saved_tokc_str.data) {
+                            saved_strings[saved_nb_args] = (char *)saved_tokc_str.data;
+                            arg_values[saved_nb_args].c.str.data = saved_tokc_str.data;
+                            arg_values[saved_nb_args].c.str.size = saved_tokc_str.size;
+                        }
+                    } else if (saved_tokc_str.data) {
+                        /* Free if we're not using it */
+                        tcc_free(saved_tokc_str.data);
                     }
                     gfunc_param_typed(s, sa);
                     nb_args++;
@@ -5370,18 +5476,16 @@ ST_FUNC void unary(void)
                 tcc_error("too few arguments to function");
             skip(')');
 
-            /* Pattern matching: check if this is a function we're interested in */
-            if (func_name_for_match) {
-                /* Example: match calls to bpf_perf_event_output */
-                printf("=== Found call to %s() at %s:%d ===\n",
-                       func_name_for_match, file->filename, file->line_num);
-                printf("Number of arguments: %d\n", saved_nb_args);
+            /* Invoke debug function handler if matched */
+            if (debug_handler) {
+                debug_handler->handler(tcc_state, arg_types, arg_values, saved_nb_args);
 
-                /* Print type information for each argument */
-                for (int i = 0; i < saved_nb_args && i < 64; i++) {
-                    print_arg_type_info(&arg_types[i], i);
+                /* Free saved string copies - handler has already duplicated them */
+                for (int i = 0; i < saved_nb_args && i < 8; i++) {
+                    if (saved_strings[i]) {
+                        tcc_free(saved_strings[i]);
+                    }
                 }
-                printf("\n");
             }
 
             gfunc_call(nb_args);

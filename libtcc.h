@@ -67,6 +67,10 @@ LIBTCCAPI int tcc_compile_string(TCCState *s, const char *buf);
    Return -1 if error. */
 LIBTCCAPI int tcc_compile_string_ex(TCCState *s, const char *buf, TCCBufWriter *w);
 
+/* Get debug function calls as JSON array.
+   Returns -1 if error or buffer too small (check w->full). */
+LIBTCCAPI int tcc_get_debug_calls(TCCState *s, TCCBufWriter *w);
+
 /*****************************/
 /* linking commands */
 

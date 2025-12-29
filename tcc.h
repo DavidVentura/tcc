@@ -637,6 +637,31 @@ struct sym_attr {
 #endif
 };
 
+/* Debug function call types */
+#define DEBUG_FUNC_STRUCT    1
+#define DEBUG_FUNC_U32       2
+#define DEBUG_FUNC_U64       3
+
+/* Record of a debug function call */
+typedef struct DebugCallRecord {
+    int func_type;           /* DEBUG_FUNC_STRUCT, etc. */
+
+    union {
+        struct {
+            const char *label;       /* Arg 0: label string */
+            int counter;             /* Arg 1: __COUNTER__ value */
+            const char *struct_name; /* Arg 2: struct name from pointer */
+            int is_union;            /* Union vs struct flag */
+        } debug_struct;
+
+        struct {
+            const char *label;
+            int counter;
+            uint32_t value;
+        } debug_u32;
+    } args;
+} DebugCallRecord;
+
 struct TCCState {
 
     int verbose; /* if true, display some information during compilation */
@@ -787,6 +812,11 @@ struct TCCState {
     /* extra attributes (eg. GOT/PLT value) for symtab symbols */
     struct sym_attr *sym_attrs;
     int nb_sym_attrs;
+
+    /* Debug function call tracking */
+    DebugCallRecord *debug_calls;
+    int nb_debug_calls;
+    int debug_calls_capacity;
 
 #ifdef TCC_TARGET_PE
     /* PE info */
