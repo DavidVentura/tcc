@@ -2436,6 +2436,14 @@ static void json_write_debug_calls(BufWriter *w, TCCState *s1)
                 buf_printf(w, "    \"is_union\": %s\n",
                           rec->args.debug_struct.is_union ? "true" : "false");
                 break;
+            case DEBUG_FUNC_STR:
+                buf_puts(w, "    \"type\": ");
+                buf_printf(w, "%d,\n", 3);  /* type=3 for strings */
+                buf_puts(w, "    \"label\": \"");
+                buf_puts(w, rec->args.debug_str.label ? rec->args.debug_str.label : "");
+                buf_puts(w, "\",\n");
+                buf_printf(w, "    \"counter\": %d\n", rec->args.debug_str.counter);
+                break;
             default:
                 buf_printf(w, "    \"type_constant\": %d\n", rec->func_type);
                 break;

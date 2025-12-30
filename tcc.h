@@ -641,6 +641,7 @@ struct sym_attr {
 #define DEBUG_FUNC_STRUCT    1
 #define DEBUG_FUNC_U32       2
 #define DEBUG_FUNC_U64       3
+#define DEBUG_FUNC_STR       4
 
 /* Record of a debug function call */
 typedef struct DebugCallRecord {
@@ -659,6 +660,11 @@ typedef struct DebugCallRecord {
             int counter;
             uint32_t value;
         } debug_u32;
+
+        struct {
+            const char *label;
+            int counter;
+        } debug_str;
     } args;
 } DebugCallRecord;
 
