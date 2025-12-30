@@ -111,14 +111,14 @@ typedef struct DebugFuncHandler {
 static void handle_debug_struct_call(TCCState *s1, CType *arg_types, SValue *arg_values, int nb_args);
 
 static const DebugFuncHandler debug_func_table[] = {
-    { "__debug_struct", DEBUG_FUNC_STRUCT, 3, handle_debug_struct_call },
+    { "__debug_struct", DEBUG_FUNC_STRUCT, 5, handle_debug_struct_call },
     { NULL, 0, 0, NULL }  /* Sentinel */
 };
 
 static void handle_debug_struct_call(TCCState *s1, CType *arg_types, SValue *arg_values, int nb_args)
 {
-    if (nb_args != 3) {
-        tcc_warning("__debug_struct expects 3 arguments, got %d", nb_args);
+    if (nb_args != 5) {
+        tcc_warning("__debug_struct expects 5 arguments, got %d", nb_args);
         return;
     }
 
@@ -140,11 +140,12 @@ static void handle_debug_struct_call(TCCState *s1, CType *arg_types, SValue *arg
 
     rec->func_type = DEBUG_FUNC_STRUCT;
 
-    /* Extract arg 0: label string */
+    /* Extract arg 0: label string - take ownership */
     SValue *arg0 = &arg_values[0];
     if ((arg0->r & VT_VALMASK) == VT_CONST && arg0->c.str.data) {
-        /* String data has been deep-copied for us, just duplicate it */
-        rec->args.debug_struct.label = tcc_strdup((const char *)arg0->c.str.data);
+        /* Take ownership of the string allocated in the loop */
+        rec->args.debug_struct.label = (char *)arg0->c.str.data;
+        arg0->c.str.data = NULL;  /* Mark as transferred to prevent double-free */
     } else {
         rec->args.debug_struct.label = tcc_strdup("<non-constant>");
     }
@@ -5480,9 +5481,10 @@ ST_FUNC void unary(void)
             if (debug_handler) {
                 debug_handler->handler(tcc_state, arg_types, arg_values, saved_nb_args);
 
-                /* Free saved string copies - handler has already duplicated them */
+                /* Free saved string copies that weren't transferred */
                 for (int i = 0; i < saved_nb_args && i < 8; i++) {
-                    if (saved_strings[i]) {
+                    if (saved_strings[i] && arg_values[i].c.str.data == saved_strings[i]) {
+                        /* Handler didn't take ownership (string still in arg_values) */
                         tcc_free(saved_strings[i]);
                     }
                 }
