@@ -2444,6 +2444,16 @@ static void json_write_debug_calls(BufWriter *w, TCCState *s1)
                 buf_puts(w, "\",\n");
                 buf_printf(w, "    \"counter\": %d\n", rec->args.debug_str.counter);
                 break;
+            case DEBUG_FUNC_NUM:
+                buf_puts(w, "    \"type\": ");
+                buf_printf(w, "%d,\n", 2);  /* type=2 for numbers */
+                buf_puts(w, "    \"label\": \"");
+                buf_puts(w, rec->args.debug_num.label ? rec->args.debug_num.label : "");
+                buf_puts(w, "\",\n");
+                buf_printf(w, "    \"counter\": %d,\n", rec->args.debug_num.counter);
+                buf_printf(w, "    \"is_signed\": %s\n",
+                          rec->args.debug_num.is_signed ? "true" : "false");
+                break;
             default:
                 buf_printf(w, "    \"type_constant\": %d\n", rec->func_type);
                 break;

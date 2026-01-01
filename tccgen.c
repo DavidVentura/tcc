@@ -110,10 +110,12 @@ typedef struct DebugFuncHandler {
 
 static void handle_debug_struct_call(TCCState *s1, CType *arg_types, SValue *arg_values, int nb_args);
 static void handle_debug_str_call(TCCState *s1, CType *arg_types, SValue *arg_values, int nb_args);
+static void handle_debug_num_call(TCCState *s1, CType *arg_types, SValue *arg_values, int nb_args);
 
 static const DebugFuncHandler debug_func_table[] = {
     { "__debug_struct", DEBUG_FUNC_STRUCT, 4, handle_debug_struct_call },
     { "__debug_str", DEBUG_FUNC_STR, 4, handle_debug_str_call },
+    { "__debug_num", DEBUG_FUNC_NUM, 4, handle_debug_num_call },
     { NULL, 0, 0, NULL }  /* Sentinel */
 };
 
@@ -219,6 +221,61 @@ static void handle_debug_str_call(TCCState *s1, CType *arg_types, SValue *arg_va
         rec->args.debug_str.counter = (int)arg1->c.i;
     } else {
         rec->args.debug_str.counter = -1;
+    }
+
+    s1->nb_debug_calls++;
+}
+
+static void handle_debug_num_call(TCCState *s1, CType *arg_types, SValue *arg_values, int nb_args)
+{
+    if (nb_args != 4) {
+        tcc_warning("__debug_num expects 4 arguments, got %d", nb_args);
+        return;
+    }
+
+    /* Expand array if needed */
+    if (s1->nb_debug_calls >= s1->debug_calls_capacity) {
+        int new_cap = s1->debug_calls_capacity == 0 ? 16 : s1->debug_calls_capacity * 2;
+        DebugCallRecord *new_array = tcc_realloc(s1->debug_calls,
+                                                  new_cap * sizeof(DebugCallRecord));
+        if (!new_array) {
+            tcc_error("out of memory tracking debug calls");
+            return;
+        }
+        s1->debug_calls = new_array;
+        s1->debug_calls_capacity = new_cap;
+    }
+
+    DebugCallRecord *rec = &s1->debug_calls[s1->nb_debug_calls];
+    memset(rec, 0, sizeof(DebugCallRecord));
+
+    rec->func_type = DEBUG_FUNC_NUM;
+
+    /* Extract arg 0: label string - take ownership */
+    SValue *arg0 = &arg_values[0];
+    if ((arg0->r & VT_VALMASK) == VT_CONST && arg0->c.str.data) {
+        /* Take ownership of the string allocated in the loop */
+        rec->args.debug_num.label = (char *)arg0->c.str.data;
+        arg0->c.str.data = NULL;  /* Mark as transferred to prevent double-free */
+    } else {
+        rec->args.debug_num.label = tcc_strdup("<non-constant>");
+    }
+
+    /* Extract arg 1: counter (integer constant) */
+    SValue *arg1 = &arg_values[1];
+    if ((arg1->r & VT_VALMASK) == VT_CONST) {
+        rec->args.debug_num.counter = (int)arg1->c.i;
+    } else {
+        rec->args.debug_num.counter = -1;
+    }
+
+    /* Extract arg 2: check signedness from pointed-to type */
+    CType *arg2_type = &arg_types[2];
+    if ((arg2_type->t & VT_BTYPE) == VT_PTR && arg2_type->ref) {
+        CType *pointed = &arg2_type->ref->type;
+        rec->args.debug_num.is_signed = !(pointed->t & VT_UNSIGNED);
+    } else {
+        rec->args.debug_num.is_signed = 0;
     }
 
     s1->nb_debug_calls++;
