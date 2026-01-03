@@ -537,48 +537,57 @@ static void error1(TCCState *s1, int is_warning, const char *fmt, va_list ap)
 {
     char buf[2048];
     BufferedFile **pf, *f;
+    TCCErrorInfo error_info;
 
     buf[0] = '\0';
     /* use upper file if inline ":asm:" or token ":paste:" */
     for (f = file; f && f->filename[0] == ':'; f = f->prev)
      ;
+
     if (f) {
-        for(pf = s1->include_stack; pf < s1->include_stack_ptr; pf++)
-            strcat_printf(buf, sizeof(buf), "In file included from %s:%d:\n",
-                (*pf)->filename, (*pf)->line_num);
-        if (s1->error_set_jmp_enabled) {
-            strcat_printf(buf, sizeof(buf), "%s:%d: ",
-                f->filename, f->line_num - !!(tok_flags & TOK_FLAG_BOL));
-        } else {
-            strcat_printf(buf, sizeof(buf), "%s: ",
-                f->filename);
-        }
+        error_info.filename = f->filename;
+        error_info.line_num = s1->error_set_jmp_enabled ?
+            (f->line_num - !!(tok_flags & TOK_FLAG_BOL)) : 0;
     } else {
-        strcat_printf(buf, sizeof(buf), "tcc: ");
+        error_info.filename = NULL;
+        error_info.line_num = 0;
     }
-    if (is_warning)
-        strcat_printf(buf, sizeof(buf), "warning: ");
-    else
-        strcat_printf(buf, sizeof(buf), "error: ");
+
     strcat_vprintf(buf, sizeof(buf), fmt, ap);
+
+    error_info.is_warning = is_warning;
+    error_info.msg = buf;
 
     if (!s1->error_func) {
         /* default case: stderr */
         if (s1->output_type == TCC_OUTPUT_PREPROCESS && s1->ppfp == stdout)
-            /* print a newline during tcc -E */
             printf("\n"), fflush(stdout);
-        fflush(stdout); /* flush -v output */
-        fprintf(stderr, "%s\n", buf);
-        fflush(stderr); /* print error/warning now (win32) */
+        fflush(stdout);
+
+        for(pf = s1->include_stack; pf < s1->include_stack_ptr; pf++)
+            fprintf(stderr, "In file included from %s:%d:\n",
+                (*pf)->filename, (*pf)->line_num);
+
+        if (error_info.filename) {
+            if (error_info.line_num)
+                fprintf(stderr, "%s:%d: ", error_info.filename, error_info.line_num);
+            else
+                fprintf(stderr, "%s: ", error_info.filename);
+        } else {
+            fprintf(stderr, "tcc: ");
+        }
+
+        fprintf(stderr, "%s: %s\n", is_warning ? "warning" : "error", buf);
+        fflush(stderr);
     } else {
-        s1->error_func(s1->error_opaque, buf);
+        s1->error_func(s1->error_opaque, &error_info);
     }
     if (!is_warning || s1->warn_error)
         s1->nb_errors++;
 }
 
 LIBTCCAPI void tcc_set_error_func(TCCState *s, void *error_opaque,
-                        void (*error_func)(void *opaque, const char *msg))
+                        void (*error_func)(void *opaque, const TCCErrorInfo *info))
 {
     s->error_opaque = error_opaque;
     s->error_func = error_func;

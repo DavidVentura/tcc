@@ -22,9 +22,17 @@ LIBTCCAPI void tcc_delete(TCCState *s);
 /* set CONFIG_TCCDIR at runtime */
 LIBTCCAPI void tcc_set_lib_path(TCCState *s, const char *path);
 
+/* Error information structure passed to error callback */
+typedef struct TCCErrorInfo {
+    const char *filename;    /* file where error occurred, or NULL if no file context */
+    int line_num;            /* line number where error occurred, or 0 if no line context */
+    int is_warning;          /* 1 if this is a warning, 0 if it's an error */
+    const char *msg;         /* the formatted error/warning message */
+} TCCErrorInfo;
+
 /* set error/warning display callback */
 LIBTCCAPI void tcc_set_error_func(TCCState *s, void *error_opaque,
-    void (*error_func)(void *opaque, const char *msg));
+    void (*error_func)(void *opaque, const TCCErrorInfo *info));
 
 /* set options as from command line (multiple supported) */
 LIBTCCAPI void tcc_set_options(TCCState *s, const char *str);

@@ -2,9 +2,11 @@
 #include <stdlib.h>
 #include "libtcc.h"
 
-void error_callback(void *opaque, const char *msg)
+void error_callback(void *opaque, const TCCErrorInfo *info)
 {
-    fprintf(stderr, "%s\n", msg);
+    fprintf(stderr, "file %s\n", info->filename);
+    fprintf(stderr, "line %d\n", info->line_num);
+    fprintf(stderr, "msg %s\n", info->msg);
 }
 
 char *read_file(const char *filename)
