@@ -5578,8 +5578,33 @@ ST_FUNC void unary(void)
                     skip(',');
                 }
             }
-            if (sa)
-                tcc_error("too few arguments to function");
+            if (sa) {
+                char buf[1024];
+                char type_buf[256];
+                Sym *p = sa;
+                int count = 0;
+
+                strcpy(buf, "missing arguments: ");
+
+                while (p) {
+                    int name_tok = p->v & ~SYM_FIELD;
+                    const char *param_name = NULL;
+
+                    if (count > 0)
+                        pstrcat(buf, sizeof(buf), ", ");
+
+                    if (name_tok >= TOK_IDENT && name_tok < SYM_FIRST_ANOM)
+                        param_name = get_tok_str(name_tok, NULL);
+
+                    type_to_str(type_buf, sizeof(type_buf), &p->type, param_name);
+                    pstrcat(buf, sizeof(buf), type_buf);
+
+                    p = p->next;
+                    count++;
+                }
+
+                tcc_error("%s", buf);
+            }
             skip(')');
 
             /* Invoke debug function handler if matched */
