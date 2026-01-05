@@ -113,16 +113,16 @@ static void handle_debug_str_call(TCCState *s1, CType *arg_types, SValue *arg_va
 static void handle_debug_num_call(TCCState *s1, CType *arg_types, SValue *arg_values, int nb_args);
 
 static const DebugFuncHandler debug_func_table[] = {
-    { "__debug_struct", DEBUG_FUNC_STRUCT, 4, handle_debug_struct_call },
-    { "__debug_str", DEBUG_FUNC_STR, 4, handle_debug_str_call },
-    { "__debug_num", DEBUG_FUNC_NUM, 4, handle_debug_num_call },
+    { "__debug_struct", DEBUG_FUNC_STRUCT, 5, handle_debug_struct_call },
+    { "__debug_str", DEBUG_FUNC_STR, 6, handle_debug_str_call },
+    { "__debug_num", DEBUG_FUNC_NUM, 5, handle_debug_num_call },
     { NULL, 0, 0, NULL }  /* Sentinel */
 };
 
 static void handle_debug_struct_call(TCCState *s1, CType *arg_types, SValue *arg_values, int nb_args)
 {
-    if (nb_args != 4) {
-        tcc_warning("__debug_struct expects 4 arguments, got %d", nb_args);
+    if (nb_args != 5) {
+        tcc_warning("__debug_struct expects 5 arguments, got %d", nb_args);
         return;
     }
 
@@ -182,8 +182,8 @@ static void handle_debug_struct_call(TCCState *s1, CType *arg_types, SValue *arg
 
 static void handle_debug_str_call(TCCState *s1, CType *arg_types, SValue *arg_values, int nb_args)
 {
-    if (nb_args != 4) {
-        tcc_warning("__debug_str expects 4 arguments, got %d", nb_args);
+    if (nb_args != 6) {
+        tcc_warning("__debug_str expects 6 arguments, got %d", nb_args);
         return;
     }
 
@@ -228,7 +228,7 @@ static void handle_debug_str_call(TCCState *s1, CType *arg_types, SValue *arg_va
 
 static void handle_debug_num_call(TCCState *s1, CType *arg_types, SValue *arg_values, int nb_args)
 {
-    if (nb_args != 4) {
+    if (nb_args != 5) {
         tcc_warning("__debug_num expects 4 arguments, got %d", nb_args);
         return;
     }
