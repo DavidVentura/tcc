@@ -9,4 +9,6 @@ WARNS="-Wno-string-plus-int -Wno-undefined-internal"
 
 rm -f $OUTPUT syntax_check.wasm
 
+mv em_include/task.h.pch .
 $CC -sEXPORT_NAME=TCC -sMODULARIZE=1 -sEVAL_CTORS -sWASM_BIGINT -flto $WARNS $CFLAGS $LDFLAGS -o $OUTPUT syntax_check.c libtcc.c tccpp.c tccgen.c tcc-stubs.c -I. --preload-file em_include@/
+mv task.h.pch em_include/
