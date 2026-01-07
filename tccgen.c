@@ -5096,6 +5096,58 @@ ST_FUNC void unary(void)
 	parse_builtin_params(0, "ee");
 	vpop();
         break;
+    case TOK_builtin_classify_type:
+	parse_builtin_params(0, "e");
+	{
+	    int t = vtop->type.t;
+	    int type_class;
+
+	    if (t & VT_ARRAY) {
+		type_class = 14;
+	    } else if (IS_ENUM(t)) {
+		type_class = 3;
+	    } else {
+		switch (t & VT_BTYPE) {
+		case VT_VOID:
+		    type_class = 0;
+		    break;
+		case VT_BOOL:
+		    type_class = 4;
+		    break;
+		case VT_PTR:
+		    type_class = 5;
+		    break;
+		case VT_BYTE:
+		case VT_SHORT:
+		case VT_INT:
+		case VT_LLONG:
+		case VT_QLONG:
+		    type_class = 1;
+		    break;
+		case VT_FLOAT:
+		case VT_DOUBLE:
+		case VT_LDOUBLE:
+		case VT_QFLOAT:
+		    type_class = 8;
+		    break;
+		case VT_FUNC:
+		    type_class = 10;
+		    break;
+		case VT_STRUCT:
+		    if (IS_UNION(t))
+			type_class = 13;
+		    else
+			type_class = 12;
+		    break;
+		default:
+		    type_class = 1;
+		    break;
+		}
+	    }
+	    vtop--;
+	    vpushi(type_class);
+	}
+        break;
     case TOK_builtin_types_compatible_p:
 	parse_builtin_params(0, "tt");
 	vtop[-1].type.t &= ~(VT_CONSTANT | VT_VOLATILE);
